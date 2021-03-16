@@ -1,0 +1,2 @@
+03-10 15:01:35.463 12299 12386 W Unity   : AndroidVideoMedia::OpenExtractor failed in ExtractorSetDataSource with error -10000 trying to access HTTP URL (http://camera.local/stream/video.mjpeg). If Target API Level is 28 or greater, please confirm the usesCleartextTraffic attribute has been added to your Android manifest; or alternatively, enable cleartext traffic to specific domains in your network security config file.
+
