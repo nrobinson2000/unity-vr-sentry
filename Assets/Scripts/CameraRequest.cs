@@ -72,7 +72,6 @@ public class CameraRequest : DownloadHandlerScript
         return -1;
     }
 
-    private bool streaming = true;
     protected override bool ReceiveData(byte[] cameraData, int dataLength)
     {
         // Data no longer incoming, stop streaming
@@ -81,7 +80,7 @@ public class CameraRequest : DownloadHandlerScript
             Debug.Log("STREAM ENDED");
             return false;
         }
-        
+
         // Copy incoming data into incomingBuff
         Buffer.BlockCopy(cameraData, 0, incomingBuff, buffCount, dataLength);
 
@@ -112,8 +111,11 @@ public class CameraRequest : DownloadHandlerScript
         if (camTexture.LoadImage(currentFrame))
         {
             screen.texture = camTexture;
+            frameReady = false;
         }
     }
+
+    private bool streaming = true;
 
     public void stopStream()
     {
