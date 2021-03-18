@@ -5,122 +5,118 @@ using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UI;
 
-
 // https://stackoverflow.com/a/39498391
 public class CameraRequest : DownloadHandlerScript
 {
-    // Standard constructor, will allocate memory
-    public CameraRequest() : base()
+    public CameraRequest(byte[] buffer, RawImage image) : base(buffer)
     {
-        
+        screen = image;
+        camTexture = new Texture2D(0, 0);
     }
-    
-  // Pre allocated constructor
-  public CameraRequest(byte[] buffer, RawImage image) : base(buffer)
-  {
-      screen = image;
-      camTexture = new Texture2D(1280, 720);
-  }
 
-  // Called when accessing `bytes` property
-  protected override byte[] GetData()
-  {
-      return null;
-  }
+    // Unity Game objects
+    private RawImage screen;
+    private Texture2D camTexture;
 
-  private RawImage screen;
-  private Texture2D camTexture;
-  
-  
-  private int byteCounter = 0;
-  private bool loadingFrame = false;
-  private const int IMAGE_SIZE = 1000000;
-  private byte[] completeImage = new byte[IMAGE_SIZE];
-  private byte[] incomingBytes = new byte[IMAGE_SIZE];
+    // Size of individual frames
+    private const int IMAGE_SIZE = 700000;
 
-  // Called once per frame when data is incoming
-  protected override bool ReceiveData(byte[] cameraData, int dataLength)
-  {
-      if (cameraData == null || cameraData.Length < 1)
-      {
-          // Null/empty buffer
-          return false;
-      }
+    // Current frame data
+    private byte[] currentFrame = new byte[IMAGE_SIZE];
+    private bool frameReady = false;
 
-      //Debug.Log($"camera data length {cameraData.Length}");
-      
-    // Search for JPEG data here
-    for (int i = 1; i < dataLength; i++)
+    // Incoming buffer data (enough for roughly 2 frames)
+    private const ulong INCOMING_SIZE = IMAGE_SIZE * 2;
+    private byte[] incomingBuff = new byte[INCOMING_SIZE];
+    private int buffCount = 0;
+
+    // JPEG protocol constants
+    private readonly byte[] jpegHeader = {0xFF, 0xD8};
+    private readonly byte[] jpegTrailer = {0xFF, 0xD9};
+
+    // TODO: Expensive, improve runtime
+    private int findHeader(byte[] buff, int length)
     {
-        // try
-        // {
-            if (loadingFrame)
+        if (buff == null || length < 1)
+        {
+            return -1;
+        }
+
+        for (int i = 1; i < length; ++i)
+        {
+            if (buff[i - 1] == jpegHeader[0] && buff[i] == jpegHeader[1])
             {
-                incomingBytes[byteCounter] = cameraData[i-1];
-                ++byteCounter;
+                return i - 1;
             }
-        // }
-        // catch (Exception e)
-        // {
-        //     Debug.Log($"Num bytes: {byteCounter}");
-        //     Debug.Log($"i: {i}");
-        //     throw;
-        // }
+        }
 
-        
-        // Beginning of header
-        if (cameraData[i-1] == 0xFF && cameraData[i] == 0xD8)
+        return -1;
+    }
+
+    // TODO: Expensive, improve runtime
+    private int findTrailer(byte[] buff, int length, int start)
+    {
+        if (buff == null || buff.Length < 1 || start < 0)
         {
-            // Write header
-            incomingBytes[0] = 0xFF;
-            incomingBytes[1] = 0xD8;
-            byteCounter = 2;
-            
-            loadingFrame = true;
-            // Debug.Log($"found starting header at: {i}");
+            return -1;
+        }
+
+        for (int i = start; i < length; ++i)
+        {
+            if (buff[i - 1] == jpegTrailer[0] && buff[i] == jpegTrailer[1])
+            {
+                return i + 1;
+            }
+        }
+
+        return -1;
+    }
+
+    private bool streaming = true;
+    protected override bool ReceiveData(byte[] cameraData, int dataLength)
+    {
+        // Data no longer incoming, stop streaming
+        if (cameraData == null || dataLength < 1 || !streaming)
+        {
+            Debug.Log("STREAM ENDED");
+            return false;
         }
         
-        // End of header
-        if (cameraData[i-1] == 0xFF && cameraData[i] == 0xD9)
+        // Copy incoming data into incomingBuff
+        Buffer.BlockCopy(cameraData, 0, incomingBuff, buffCount, dataLength);
+
+        // Update buffCount with number of bytes copied
+        buffCount += dataLength;
+
+        // Find header and trailer locations
+        int headerPos = findHeader(incomingBuff, buffCount);
+        int trailerPos = findTrailer(incomingBuff, buffCount, headerPos);
+        int frameLen = trailerPos - headerPos;
+
+        // We found a frame!
+        if (frameLen > 0)
         {
-            // Write footer
-            incomingBytes[byteCounter++] = 0xFF;
-            incomingBytes[byteCounter++] = 0xD9;            
-            
-            // Debug.Log($"Got a frame! Size: {byteCounter}");
-    
-            // Buffer.BlockCopy(incomingBytes, 0, completeImage, 0, byteCounter);
-            updateImage();
-            
-            // Reset
-            loadingFrame = false;
-            byteCounter = 0;
+            Buffer.BlockCopy(incomingBuff, headerPos, currentFrame, 0, frameLen);
+            buffCount = 0;
+            frameReady = true;
+        }
+
+        // Continue streaming
+        return true;
+    }
+
+    // Called once per frame in VideoStream
+    public void updateImage()
+    {
+        if (!frameReady) return;
+        if (camTexture.LoadImage(currentFrame))
+        {
+            screen.texture = camTexture;
         }
     }
-    
-    // Look for 0xFF 0xD8 ..... 0xFF 0xD9
-    
 
-      return true;
-  }
-
-  private void updateImage()
-  {
-      camTexture.LoadImage(incomingBytes);
-
-      // Texture2D t = screen.texture;
-      screen.texture = camTexture;
-  }
-
-  // Called when all data has been received
-  protected override void CompleteContent()
-  {
-      Debug.Log("CustomWebRequest :: CompleteContent - DOWNLOAD COMPLETE!");
-  }
-
-  // Called when a Content-Length header is received from server
-  protected override void ReceiveContentLengthHeader(ulong contentLength)
-  {
-      base.ReceiveContentLengthHeader(contentLength);
-  }
+    public void stopStream()
+    {
+        streaming = false;
+    }
 }
