@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UI;
@@ -61,15 +62,28 @@ public class CameraRequest : DownloadHandlerScript
             return -1;
         }
 
-        for (int i = start; i < length; ++i)
+        // int newStart = (start > averageFrameSize/2) ? start + averageFrameSize / 2 : start;
+        int newStart = start + averageFrameSize / 2;
+        for (int i = length; i > newStart; --i)
         {
-            if (buff[i - 1] == jpegTrailer[0] && buff[i] == jpegTrailer[1])
+            if (buff[i - 1] == jpegHeader[0] && buff[i] == jpegHeader[1])
             {
-                return i + 1;
+                return i - 1;
             }
         }
 
         return -1;
+    }
+    
+    // Rolling average frame size
+    private int averageFrameSize = 0;
+    private int[] previousSizes = new int[10];
+    private int averageIndex = 0;
+    private void updateAverageFrameSize(int lastFrameSize)
+    {
+        previousSizes[averageIndex++] = lastFrameSize;
+        averageIndex %= previousSizes.Length;
+        averageFrameSize = previousSizes.Sum() / previousSizes.Length;
     }
 
     protected override bool ReceiveData(byte[] cameraData, int dataLength)
@@ -96,6 +110,7 @@ public class CameraRequest : DownloadHandlerScript
         if (frameLen > 0)
         {
             Buffer.BlockCopy(incomingBuff, headerPos, currentFrame, 0, frameLen);
+            updateAverageFrameSize(frameLen);
             buffCount = 0;
             frameReady = true;
         }
